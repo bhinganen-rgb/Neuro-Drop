@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NeuroDrop // The switch that outlives you</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;1,300;1,600&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.9.0/ethers.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #000;
+    --cyan: #00e5ff;
+    --cyan-dim: rgba(0, 229, 255, 0.25);
+    --cyan-soft: rgba(0, 229, 255, 0.08);
+    --cyan-ghost: rgba(0, 229, 255, 0.03);
+    --pink: #ff2e77;
+    --pink-dim: rgba(255, 46, 119, 0.3);
+    --text: #d5f3ff;
+    --text-dim: #6a8b96;
+    --panel-border: 1px solid var(--cyan-dim);
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+    --display: 'Chakra Petch', 'Inter', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; overflow-x: hidden; }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse at 20% 10%, rgba(0,229,255,0.06), transparent 50%),
+      radial-gradient(ellipse at 85% 90%, rgba(255,46,119,0.04), transparent 50%);
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at 50% 40%, black 30%, transparent 80%);
+  }
+  a { color: var(--cyan); text-decoration: none; }
+
+  /* Topbar */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 32px; background: rgba(0,0,0,0.7); backdrop-filter: blur(12px);
+    border-bottom: var(--panel-border);
+  }
+  .wordmark { display: flex; align-items: baseline; gap: 10px; }
+  .wordmark .name { font-family: var(--display); font-weight: 600; font-style: italic; font-size: 22px; letter-spacing: 0.12em; color: var(--cyan); text-shadow: 0 0 12px rgba(0,229,255,0.5); }
+  .wordmark .ver { font-family: var(--mono); font-size: 11px; color: var(--text-dim); letter-spacing: 0.1em; }
+
+  .btn {
+    font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase;
+    background: transparent; color: var(--cyan); border: 1px solid var(--cyan-dim);
+    padding: 10px 18px; cursor: pointer; border-radius: 2px;
+    transition: all 0.15s; position: relative;
+  }
+  .btn:hover:not(:disabled) { background: var(--cyan-soft); border-color: var(--cyan); box-shadow: 0 0 20px rgba(0,229,255,0.25); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.primary { background: rgba(0,229,255,0.1); border-color: var(--cyan); color: var(--cyan); }
+  .btn.primary:hover:not(:disabled) { background: rgba(0,229,255,0.18); box-shadow: 0 0 24px rgba(0,229,255,0.4); }
+  .btn.danger { color: var(--pink); border-color: var(--pink-dim); }
+  .btn.danger:hover:not(:disabled) { background: rgba(255,46,119,0.08); border-color: var(--pink); box-shadow: 0 0 20px rgba(255,46,119,0.3); }
+  .btn.sm { padding: 6px 12px; font-size: 10px; }
+
+  /* Layout */
+  main { position: relative; z-index: 1; padding: 0 32px 80px; max-width: 1400px; margin: 0 auto; }
+
+  /* Hero */
+  .hero { padding: 90px 0 70px; text-align: center; position: relative; }
+  .hero .rings { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0.25; pointer-events: none; }
+  .hero .rings svg { width: 620px; max-width: 90vw; height: auto; }
+  .hero h1 {
+    font-family: var(--display); font-weight: 300; font-style: italic;
+    font-size: clamp(38px, 6vw, 68px); line-height: 1.05; letter-spacing: -0.01em;
+    color: #fff; position: relative;
+  }
+  .hero h1 em { font-style: italic; color: var(--cyan); text-shadow: 0 0 24px rgba(0,229,255,0.5); font-weight: 600; }
+  .hero .sub {
+    margin-top: 22px; font-family: var(--mono); font-size: 13px;
+    letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim);
+    position: relative;
+  }
+
+  /* Panels */
+  .panel {
+    background: var(--cyan-ghost); border: var(--panel-border);
+    backdrop-filter: blur(10px); border-radius: 2px;
+    padding: 24px; position: relative;
+  }
+  .panel::before, .panel::after {
+    content: ""; position: absolute; width: 14px; height: 14px;
+    border: 1px solid var(--cyan); pointer-events: none;
+  }
+  .panel::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+  .panel::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+  .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px dashed var(--cyan-dim); }
+  .panel-head h2 { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: 0.25em; text-transform: uppercase; color: var(--cyan); }
+  .panel-head .tag { font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 0.2em; }
+
+  /* Grid */
+  .app-grid { display: grid; grid-template-columns: minmax(340px, 460px) 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 900px) { .app-grid { grid-template-columns: 1fr; } }
+
+  /* Form */
+  .field { margin-bottom: 18px; }
+  .field label {
+    display: block; font-family: var(--mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .field input, .field select, .field textarea {
+    width: 100%; background: rgba(0,0,0,0.5); border: 1px solid var(--cyan-dim);
+    color: var(--text); font-family: var(--mono); font-size: 13px;
+    padding: 12px 14px; border-radius: 2px; outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0,229,255,0.1);
+  }
+  .field textarea { resize: vertical; min-height: 90px; font-family: var(--sans); }
+  .field .hint { font-family: var(--mono); font-size: 10px; color: var(--text-dim); margin-top: 6px; letter-spacing: 0.1em; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid var(--cyan-dim); }
+  .tab {
+    flex: 0 0 auto; padding: 12px 20px; font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim);
+    background: transparent; border: none; cursor: pointer; position: relative;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+  .tab .count { margin-left: 8px; font-size: 9px; opacity: 0.7; }
+
+  /* Drop card */
+  .drop-list { display: grid; gap: 16px; }
+  .drop-card {
+    display: grid; grid-template-columns: 140px 1fr auto; gap: 20px;
+    background: var(--cyan-ghost); border: 1px solid var(--cyan-dim); padding: 20px; border-radius: 2px;
+    align-items: center;
+  }
+  .drop-card.expired { border-color: var(--pink-dim); background: rgba(255,46,119,0.03); }
+  .drop-card .ring-wrap { position: relative; width: 140px; height: 140px; }
+  .drop-card .ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .drop-card .ring-bg { fill: none; stroke: rgba(0,229,255,0.1); stroke-width: 3; }
+  .drop-card .ring-fg { fill: none; stroke: var(--cyan); stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset 0.4s; filter: drop-shadow(0 0 4px rgba(0,229,255,0.7)); }
+  .drop-card.expired .ring-fg { stroke: var(--pink); filter: drop-shadow(0 0 4px rgba(255,46,119,0.7)); }
+  .drop-card .ring-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+  }
+  .drop-card .ring-center .big { font-family: var(--display); font-weight: 600; font-size: 22px; color: var(--cyan); line-height: 1; }
+  .drop-card.expired .ring-center .big { color: var(--pink); }
+  .drop-card .ring-center .lbl { font-family: var(--mono); font-size: 8px; letter-spacing: 0.2em; color: var(--text-dim); text-transform: uppercase; margin-top: 4px; }
+
+  .drop-info .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .drop-info .id { font-family: var(--mono); font-size: 11px; color: var(--text-dim); letter-spacing: 0.15em; }
+  .pill { font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; padding: 3px 8px; border: 1px solid; border-radius: 2px; }
+  .pill.armed { color: var(--cyan); border-color: var(--cyan-dim); }
+  .pill.released { color: var(--text-dim); border-color: var(--text-dim); }
+  .pill.disarmed { color: var(--text-dim); border-color: var(--text-dim); }
+  .pill.expired { color: var(--pink); border-color: var(--pink-dim); background: rgba(255,46,119,0.05); }
+  .drop-info .meta { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  .drop-info .meta strong { color: var(--text); font-weight: 500; }
+  .drop-info .amount { font-family: var(--display); font-size: 20px; color: #fff; font-weight: 600; }
+  .drop-info .amount span { font-size: 12px; color: var(--text-dim); font-family: var(--mono); letter-spacing: 0.15em; margin-left: 4px; }
+  .drop-info .msg { font-size: 12px; color: var(--text-dim); font-style: italic; margin-top: 6px; padding: 8px 12px; background: rgba(0,0,0,0.4); border-left: 2px solid var(--cyan-dim); }
+  .drop-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+
+  .empty { padding: 40px 20px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-dim); letter-spacing: 0.2em; text-transform: uppercase; border: 1px dashed var(--cyan-dim); }
+
+  /* Toasts */
+  #toasts { position: fixed; top: 80px; right: 24px; z-index: 100; display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
+  .toast {
+    background: rgba(0,0,0,0.85); border: 1px solid var(--cyan-dim);
+    padding: 12px 16px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    color: var(--text); border-radius: 999px; backdrop-filter: blur(10px);
+    box-shadow: 0 0 20px rgba(0,229,255,0.15);
+    animation: slideIn 0.3s ease-out;
+  }
+  .toast.error { border-color: var(--pink-dim); box-shadow: 0 0 20px rgba(255,46,119,0.2); color: #ffd0e0; }
+  .toast.success { border-color: var(--cyan); }
+  @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* Wallet chip */
+  .wallet-chip { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; color: var(--text-dim); }
+  .wallet-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .wallet-chip .addr { color: var(--cyan); }
+
+  footer { text-align: center; margin-top: 60px; font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 0.2em; text-transform: uppercase; }
+  footer a { color: var(--text-dim); }
+  footer a:hover { color: var(--cyan); }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wordmark">
+    <span class="name">NEURODROP</span>
+    <span class="ver">// v1.0</span>
+  </div>
+  <div id="walletArea">
+    <button class="btn primary" id="connectBtn">Connect Wallet</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="rings" aria-hidden="true">
+      <svg viewBox="0 0 600 600">
+        <circle cx="300" cy="300" r="290" fill="none" stroke="rgba(0,229,255,0.4)" stroke-width="0.5"/>
+        <circle cx="300" cy="300" r="240" fill="none" stroke="rgba(0,229,255,0.3)" stroke-width="0.5" stroke-dasharray="2 8"/>
+        <circle cx="300" cy="300" r="190" fill="none" stroke="rgba(0,229,255,0.35)" stroke-width="0.5"/>
+        <circle cx="300" cy="300" r="140" fill="none" stroke="rgba(0,229,255,0.25)" stroke-width="0.5" stroke-dasharray="4 4"/>
+        <circle cx="300" cy="300" r="90" fill="none" stroke="rgba(0,229,255,0.4)" stroke-width="0.5"/>
+      </svg>
+    </div>
+    <h1>The switch that <em>outlives you.</em></h1>
+    <p class="sub">Escrow // Check in // Or let it fall</p>
+  </section>
+
+  <section class="app-grid">
+    <!-- LEFT: ARM FORM -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Arm New Drop</h2>
+        <span class="tag">/ 001</span>
+      </div>
+      <form id="armForm">
+        <div class="field">
+          <label for="fBene">Beneficiary Address</label>
+          <input id="fBene" type="text" placeholder="0x…" required autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="fAmount">Amount (BOT)</label>
+          <input id="fAmount" type="number" step="0.0001" min="0" placeholder="0.1" required />
+        </div>
+        <div class="field">
+          <label for="fInterval">Check-in Interval</label>
+          <select id="fInterval">
+            <option value="3600">1 hour</option>
+            <option value="86400" selected>1 day</option>
+            <option value="604800">1 week</option>
+            <option value="2592000">30 days</option>
+            <option value="custom">Custom (seconds)</option>
+          </select>
+        </div>
+        <div class="field" id="fCustomWrap" style="display:none">
+          <label for="fCustom">Custom interval (seconds, 3600–31536000)</label>
+          <input id="fCustom" type="number" min="3600" max="31536000" placeholder="86400" />
+        </div>
+        <div class="field">
+          <label for="fMsg">Message (max 512, public)</label>
+          <textarea id="fMsg" maxlength="512" placeholder="Words for after."></textarea>
+          <div class="hint">// Message is stored in plaintext on-chain.</div>
+        </div>
+        <button type="submit" class="btn primary" style="width:100%" id="armBtn">Arm Drop</button>
+      </form>
+    </div>
+
+    <!-- RIGHT: DROPS -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2 id="tabTitle">My Drops</h2>
+        <span class="tag" id="tabTag">/ 002</span>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="mine">Mine <span class="count" id="cntMine">0</span></button>
+        <button class="tab" data-tab="tome">To Me <span class="count" id="cntTome">0</span></button>
+      </div>
+      <div id="dropList" class="drop-list">
+        <div class="empty">Connect wallet to view drops</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>BOT Chain // <a href="https://scan.bohr.life" target="_blank" rel="noopener">Testnet Explorer</a> // Public-message anti-loss tool. Not for secrets.</div>
+  </footer>
+</main>
+
+<div id="toasts"></div>
+
+<script>
+  // ============================================================
+  // NETWORK CONFIG — swap this block for mainnet
+  // ============================================================
+  // MAINNET (uncomment to switch):
+  //   const NET = { chainIdHex: "0x2A5", chainId: 677, name: "BOT Chain",
+  //     rpcUrl: "https://rpc.botchain.ai", explorer: "https://scan.botchain.ai" };
+  //
+  // TESTNET (default):
+  const NET = {
+    chainIdHex: "0x3C8",
+    chainId: 968,
+    name: "BOT Chain Testnet",
+    rpcUrl: "https://rpc.bohr.life",
+    explorer: "https://scan.bohr.life",
+  };
+
+  const CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+  const ABI = [
+    "function arm(address beneficiary, string message, uint256 intervalSecs) external payable returns (uint256)",
+    "function checkIn(uint256 dropId) external",
+    "function disarm(uint256 dropId) external",
+    "function release(uint256 dropId) external",
+    "function getDrop(uint256 dropId) view returns (address owner, address beneficiary, uint256 amount, string message, uint256 armedAt, uint256 lastCheckIn, uint256 intervalSecs, uint8 status)",
+    "function getDeadline(uint256 dropId) view returns (uint256)",
+    "function isExpired(uint256 dropId) view returns (bool)",
+    "function getDropsByOwner(address) view returns (uint256[])",
+    "function getDropsForBeneficiary(address) view returns (uint256[])",
+    "function dropCount() view returns (uint256)",
+    "function platformFeeBps() view returns (uint256)",
+    "event DropArmed(uint256 indexed dropId, address indexed owner, address indexed beneficiary, uint256 amount, uint256 intervalSecs)",
+    "event CheckedIn(uint256 indexed dropId, address indexed owner, uint256 timestamp)",
+    "event Disarmed(uint256 indexed dropId, address indexed owner, uint256 refund)",
+    "event Released(uint256 indexed dropId, address indexed beneficiary, uint256 payout, uint256 fee, address triggeredBy)"
+  ];
+
+  let provider, signer, account, contract, roContract;
+  let activeTab = "mine";
+  let currentDrops = [];
+  let tickTimer;
+
+  // ---------- Toasts ----------
+  function toast(msg, kind = "") {
+    const el = document.createElement("div");
+    el.className = "toast " + kind;
+    el.textContent = msg;
+    document.getElementById("toasts").appendChild(el);
+    setTimeout(() => { el.style.transition = "opacity .3s"; el.style.opacity = "0"; setTimeout(() => el.remove(), 300); }, 4200);
+  }
+
+  // ---------- Wallet ----------
+  async function connect() {
+    if (!window.ethereum) { toast("MetaMask not detected", "error"); return; }
+    try {
+      provider = new ethers.BrowserProvider(window.ethereum);
+      await window.ethereum.request({ method: "eth_requestAccounts" });
+      await ensureNetwork();
+      signer = await provider.getSigner();
+      account = await signer.getAddress();
+      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      roContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+      renderWallet();
+      toast("Wallet connected", "success");
+      await refresh();
+
+      window.ethereum.on("accountsChanged", () => location.reload());
+      window.ethereum.on("chainChanged", () => location.reload());
+    } catch (e) { console.error(e); toast(e?.message || "Connect failed", "error"); }
+  }
+
+  async function ensureNetwork() {
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: NET.chainIdHex }],
+      });
+    } catch (err) {
+      if (err.code === 4902) {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: NET.chainIdHex,
+            chainName: NET.name,
+            nativeCurrency: { name: "BOT", symbol: "BOT", decimals: 18 },
+            rpcUrls: [NET.rpcUrl],
+            blockExplorerUrls: [NET.explorer],
+          }],
+        });
+      } else { throw err; }
+    }
+  }
+
+  function renderWallet() {
+    const el = document.getElementById("walletArea");
+    if (!account) return;
+    const short = account.slice(0, 6) + "…" + account.slice(-4);
+    el.innerHTML = `<div class="wallet-chip"><span class="dot"></span><span>NET/${NET.chainId}</span><span class="addr">${short}</span></div>`;
+  }
+
+  // ---------- Form ----------
+  document.getElementById("fInterval").addEventListener("change", (e) => {
+    document.getElementById("fCustomWrap").style.display = e.target.value === "custom" ? "" : "none";
+  });
+
+  document.getElementById("armForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!contract) { toast("Connect wallet first", "error"); return; }
+    const bene = document.getElementById("fBene").value.trim();
+    const amountStr = document.getElementById("fAmount").value.trim();
+    const sel = document.getElementById("fInterval").value;
+    const interval = sel === "custom" ? parseInt(document.getElementById("fCustom").value, 10) : parseInt(sel, 10);
+    const message = document.getElementById("fMsg").value;
+
+    if (!ethers.isAddress(bene)) { toast("Bad beneficiary address", "error"); return; }
+    if (!amountStr || parseFloat(amountStr) <= 0) { toast("Amount must be > 0", "error"); return; }
+    if (!interval || interval < 3600 || interval > 31536000) { toast("Interval out of range", "error"); return; }
+
+    const btn = document.getElementById("armBtn");
+    btn.disabled = true; btn.textContent = "ARMING…";
+    try {
+      const value = ethers.parseEther(amountStr);
+      const tx = await contract.arm(bene, message, interval, { value });
+      toast("Tx sent — waiting…");
+      await tx.wait();
+      toast("Drop armed", "success");
+      document.getElementById("armForm").reset();
+      document.getElementById("fCustomWrap").style.display = "none";
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      toast(shortErr(err), "error");
+    } finally {
+      btn.disabled = false; btn.textContent = "Arm Drop";
+    }
+  });
+
+  function shortErr(e) {
+    return (e?.shortMessage || e?.reason || e?.info?.error?.message || e?.message || "Transaction failed").slice(0, 120);
+  }
+
+  // ---------- Tabs ----------
+  document.querySelectorAll(".tab").forEach(t => {
+    t.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+      t.classList.add("active");
+      activeTab = t.dataset.tab;
+      document.getElementById("tabTitle").textContent = activeTab === "mine" ? "My Drops" : "Drops To Me";
+      renderDrops();
+    });
+  });
+
+  // ---------- Refresh ----------
+  async function refresh() {
+    if (!roContract || !account) return;
+    try {
+      const [mineIds, toMeIds] = await Promise.all([
+        roContract.getDropsByOwner(account),
+        roContract.getDropsForBeneficiary(account),
+      ]);
+      document.getElementById("cntMine").textContent = mineIds.length;
+      document.getElementById("cntTome").textContent = toMeIds.length;
+
+      const ids = activeTab === "mine" ? mineIds : toMeIds;
+      const drops = await Promise.all(ids.map(async (id) => {
+        const d = await roContract.getDrop(id);
+        return {
+          id: Number(id),
+          owner: d[0], beneficiary: d[1], amount: d[2], message: d[3],
+          armedAt: Number(d[4]), lastCheckIn: Number(d[5]),
+          intervalSecs: Number(d[6]), status: Number(d[7]),
+        };
+      }));
+      currentDrops = drops.reverse();
+      renderDrops();
+    } catch (e) {
+      console.error(e);
+      toast("Load failed — check CONTRACT_ADDRESS", "error");
+    }
+  }
+
+  function renderDrops() {
+    const wrap = document.getElementById("dropList");
+    if (!currentDrops.length) {
+      wrap.innerHTML = `<div class="empty">${activeTab === "mine" ? "No drops armed yet" : "Nothing left to you"}</div>`;
+      return;
+    }
+    wrap.innerHTML = currentDrops.map(cardHTML).join("");
+    wrap.querySelectorAll("[data-action]").forEach(btn => {
+      btn.addEventListener("click", () => handleAction(btn.dataset.action, parseInt(btn.dataset.id, 10)));
+    });
+    tick(); // paint countdowns immediately
+  }
+
+  function cardHTML(d) {
+    const deadline = d.lastCheckIn + d.intervalSecs;
+    const now = Math.floor(Date.now() / 1000);
+    const remaining = deadline - now;
+    const isArmed = d.status === 0;
+    const expired = isArmed && remaining <= 0;
+    const statusPill = expired ? `<span class="pill expired">Expired</span>`
+      : d.status === 0 ? `<span class="pill armed">Armed</span>`
+      : d.status === 1 ? `<span class="pill released">Released</span>`
+      : `<span class="pill disarmed">Disarmed</span>`;
+
+    // ring math
+    const R = 62, C = 2 * Math.PI * R;
+    const frac = isArmed ? Math.max(0, Math.min(1, remaining / d.intervalSecs)) : 0;
+    const dashOff = C * (1 - frac);
+
+    const bigTxt = expired ? "EXPIRED" : (isArmed ? fmtRemaining(remaining) : (d.status === 1 ? "SENT" : "OFF"));
+    const isMine = account && d.owner.toLowerCase() === account.toLowerCase();
+    const isBene = account && d.beneficiary.toLowerCase() === account.toLowerCase();
+
+    let actions = "";
+    if (isArmed && isMine && !expired) {
+      actions += `<button class="btn sm primary" data-action="checkin" data-id="${d.id}">Check In</button>`;
+      actions += `<button class="btn sm danger" data-action="disarm" data-id="${d.id}">Disarm</button>`;
+    }
+    if (isArmed && expired) {
+      actions += `<button class="btn sm primary" data-action="release" data-id="${d.id}">Release</button>`;
+    }
+
+    const msg = d.message ? `<div class="msg">“${escapeHTML(d.message)}”</div>` : "";
+    const other = isMine ? `→ <strong>${shortAddr(d.beneficiary)}</strong>` : `← <strong>${shortAddr(d.owner)}</strong>`;
+
+    return `
+      <div class="drop-card ${expired ? "expired" : ""}" data-card-id="${d.id}" data-deadline="${deadline}" data-interval="${d.intervalSecs}" data-status="${d.status}">
+        <div class="ring-wrap">
+          <svg viewBox="0 0 140 140">
+            <circle class="ring-bg" cx="70" cy="70" r="${R}"/>
+            <circle class="ring-fg" cx="70" cy="70" r="${R}" stroke-dasharray="${C}" stroke-dashoffset="${dashOff}"/>
+          </svg>
+          <div class="ring-center">
+            <div class="big">${bigTxt}</div>
+            <div class="lbl">${isArmed && !expired ? "remaining" : "status"}</div>
+          </div>
+        </div>
+        <div class="drop-info">
+          <div class="row">
+            <span class="id">DROP #${d.id.toString().padStart(4,"0")}</span>
+            ${statusPill}
+          </div>
+          <div class="row"><span class="amount">${ethers.formatEther(d.amount)}<span>BOT</span></span></div>
+          <div class="row"><span class="meta">${other}</span></div>
+          <div class="row"><span class="meta">Interval ${fmtInterval(d.intervalSecs)}</span></div>
+          ${msg}
+        </div>
+        <div class="drop-actions">${actions || `<span class="meta" style="font-family:var(--mono);font-size:10px;color:var(--text-dim)">—</span>`}</div>
+      </div>`;
+  }
+
+  function tick() {
+    const now = Math.floor(Date.now() / 1000);
+    document.querySelectorAll(".drop-card").forEach(card => {
+      const deadline = parseInt(card.dataset.deadline, 10);
+      const interval = parseInt(card.dataset.interval, 10);
+      const status = parseInt(card.dataset.status, 10);
+      if (status !== 0) return;
+      const remaining = deadline - now;
+      const expired = remaining <= 0;
+      const big = card.querySelector(".ring-center .big");
+      const lbl = card.querySelector(".ring-center .lbl");
+      const ring = card.querySelector(".ring-fg");
+      const R = 62, C = 2 * Math.PI * R;
+      if (expired) {
+        if (!card.classList.contains("expired")) {
+          card.classList.add("expired");
+          big.textContent = "EXPIRED";
+          lbl.textContent = "status";
+          ring.setAttribute("stroke-dashoffset", C);
+        }
+      } else {
+        big.textContent = fmtRemaining(remaining);
+        const frac = Math.max(0, Math.min(1, remaining / interval));
+        ring.setAttribute("stroke-dashoffset", C * (1 - frac));
+      }
+    });
+  }
+
+  function startTicker() {
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(tick, 1000);
+  }
+
+  // ---------- Actions ----------
+  async function handleAction(action, id) {
+    if (!contract) { toast("Connect wallet", "error"); return; }
+    try {
+      let tx;
+      if (action === "checkin") tx = await contract.checkIn(id);
+      else if (action === "disarm") tx = await contract.disarm(id);
+      else if (action === "release") tx = await contract.release(id);
+      toast("Tx sent — waiting…");
+      await tx.wait();
+      toast(action.toUpperCase() + " confirmed", "success");
+      await refresh();
+    } catch (e) {
+      console.error(e);
+      toast(shortErr(e), "error");
+    }
+  }
+
+  // ---------- Format helpers ----------
+  function fmtRemaining(secs) {
+    if (secs <= 0) return "0s";
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
+  function fmtInterval(secs) {
+    if (secs % 86400 === 0) return (secs / 86400) + "d";
+    if (secs % 3600 === 0) return (secs / 3600) + "h";
+    return secs + "s";
+  }
+  function shortAddr(a) { return a.slice(0, 6) + "…" + a.slice(-4); }
+  function escapeHTML(s) { return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c])); }
+
+  // ---------- Boot ----------
+  document.getElementById("connectBtn").addEventListener("click", connect);
+  startTicker();
+  if (window.ethereum && window.ethereum.selectedAddress) connect();
+</script>
+</body>
+</html>
